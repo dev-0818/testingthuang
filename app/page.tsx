@@ -14,23 +14,12 @@ export default function HomePage() {
   const brandAssets = getBrandAssets();
   const projects = getAllProjects();
   const homepageProjects = projects.filter((project) => project.slug !== "brastagi");
-  const excludedHomeImages = new Set([
-    "/images/komersial/gudang-mmtc/01-mmtc-1-1920.webp",
-    "/images/residential/cemara-hijau/03-ch-3-1920.webp"
-  ]);
-  const lexingtonProject = homepageProjects.find((project) => project.slug === "lexington");
-  const lexingtonLeadImage =
-    lexingtonProject?.images.find((image) => image.sources.w1920.endsWith("/08-lxt-8-1920.webp")) ??
-    lexingtonProject?.images[7] ??
-    null;
+  const lexingtonProject = homepageProjects.find((project) => project.slug === "lexington") ?? homepageProjects[0] ?? null;
+  const lexingtonLeadImage = lexingtonProject?.images[7] ?? lexingtonProject?.cover ?? null;
 
   const slides = homepageProjects
     .map((project) => project.cover)
-    .filter(
-      (slide) =>
-        slide.sources.w1920 !== lexingtonLeadImage?.sources.w1920 &&
-        !excludedHomeImages.has(slide.sources.w1920)
-    )
+    .filter((slide) => slide.sources.w1920 !== lexingtonLeadImage?.sources.w1920)
     .slice(0, 10);
 
   const heroSlides = [lexingtonLeadImage, ...slides].filter(
@@ -39,9 +28,7 @@ export default function HomePage() {
 
   const mobilePortraitSlides = homepageProjects
     .flatMap((project) => project.images)
-    .filter(
-      (image) => image.orientation === "portrait" && !excludedHomeImages.has(image.sources.w1920)
-    )
+    .filter((image) => image.orientation === "portrait")
     .slice(0, 10)
     .map((image) => image.sources.w1920);
 
