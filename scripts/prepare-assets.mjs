@@ -5,6 +5,7 @@ const ROOT = process.cwd();
 const IMAGES_ROOT = path.join(ROOT, "Images");
 const PUBLIC_ROOT = path.join(ROOT, "public");
 const OUTPUT_IMAGES_ROOT = path.join(PUBLIC_ROOT, "images");
+const OUTPUT_PROJECTS_ROOT = path.join(OUTPUT_IMAGES_ROOT, "projects");
 const OUTPUT_LOGOS_ROOT = path.join(PUBLIC_ROOT, "logos");
 const OUTPUT_FAVICON_PATH = path.join(PUBLIC_ROOT, "favicon.png");
 const GENERATED_ROOT = path.join(ROOT, "src", "generated");
@@ -42,6 +43,15 @@ const ensureDir = async (dir) => {
   await fs.mkdir(dir, { recursive: true });
 };
 
+const fileExists = async (filePath) => {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 const parseJsonFile = async (filePath, fallback) => {
   try {
     const raw = await fs.readFile(filePath, "utf8");
@@ -73,6 +83,15 @@ const buildWhatsAppUrl = (input) => {
 const getPublicSiteUrl = () => {
   return process.env.SITE_URL || process.env.NEXT_PUBLIC_SITE_URL || DEFAULT_SITE_CONFIG.siteUrl;
 };
+
+const toSlug = (input) =>
+  String(input ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "item";
+
+const getProjectKey = (category, slug) => `${category}::${slug}`;
 
 const getSupabaseConfig = () => {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -171,29 +190,113 @@ const parseWebpDimensions = (buffer) => {
 
 const dimensionCache = new Map();
 
-const readWebpDimensionsFromUrl = async (imageUrl) => {
-  if (!imageUrl) {
-    return null;
+const readImageDimensionsFromBuffer = (buffer) => parseWebpDimensions(buffer);
+
+const getFileExtension = (imageUrl, contentType = "") => {
+  try {
+    const parsedUrl = new URL(imageUrl);
+    const extension = path.extname(parsedUrl.pathname).toLowerCase();
+
+    if (extension) {
+      return extension;
+    }
+  } catch {
+    // Ignore malformed URLs and fall back to content-type detection below.
   }
 
-  if (dimensionCache.has(imageUrl)) {
-    return dimensionCache.get(imageUrl);
+  switch (contentType.split(";")[0].trim().toLowerCase()) {
+    case "image/jpeg":
+      return ".jpg";
+    case "image/png":
+      return ".png";
+    case "image/avif":
+      return ".avif";
+    case "image/webp":
+    default:
+      return ".webp";
   }
+};
+
+const getPublicProjectDirectory = (category, slug) =>
+  path.join(OUTPUT_PROJECTS_ROOT, toSlug(category), toSlug(slug));
+
+const getPublicProjectUrl = (category, slug, fileName) =>
+  `/images/projects/${toSlug(category)}/${toSlug(slug)}/${fileName}`;
+
+const findExistingLocalAsset = async (projectDir, baseName) => {
+  try {
+    const entries = await fs.readdir(projectDir, { withFileTypes: true });
+    const file = entries.find(
+      (entry) => entry.isFile() && entry.name.startsWith(`${baseName}.`)
+    );
+
+    return file ? path.join(projectDir, file.name) : null;
+  } catch {
+    return null;
+  }
+};
+
+const readDimensionsFromLocalFile = async (filePath) => {
+  try {
+    const buffer = await fs.readFile(filePath);
+    return readImageDimensionsFromBuffer(buffer);
+  } catch {
+    return null;
+  }
+};
+
+const downloadProjectImage = async (project, image, index) => {
+  const projectDir = getPublicProjectDirectory(project.category, project.slug);
+  const fileBaseName = `${String(index + 1).padStart(2, "0")}-${toSlug(image.id || "image")}`;
+  const existingLocalPath = await findExistingLocalAsset(projectDir, fileBaseName);
+
+  if (dimensionCache.has(image.image_url)) {
+    return dimensionCache.get(image.image_url);
+  }
+
+  await ensureDir(projectDir);
 
   try {
-    const response = await fetch(imageUrl, { cache: "force-cache" });
+    const response = await fetch(image.image_url, { cache: "no-store" });
+
     if (!response.ok) {
-      dimensionCache.set(imageUrl, null);
-      return null;
+      throw new Error(`Image download failed (${response.status})`);
     }
 
-    const arrayBuffer = await response.arrayBuffer();
-    const dimensions = parseWebpDimensions(Buffer.from(arrayBuffer));
-    dimensionCache.set(imageUrl, dimensions);
-    return dimensions;
-  } catch {
-    dimensionCache.set(imageUrl, null);
-    return null;
+    const contentType = response.headers.get("content-type") || "";
+    const extension = getFileExtension(image.image_url, contentType);
+    const fileName = `${fileBaseName}${extension}`;
+    const localPath = path.join(projectDir, fileName);
+    const buffer = Buffer.from(await response.arrayBuffer());
+
+    await fs.writeFile(localPath, buffer);
+
+    const downloadedImage = {
+      dimensions: readImageDimensionsFromBuffer(buffer),
+      localUrl: getPublicProjectUrl(project.category, project.slug, fileName)
+    };
+
+    dimensionCache.set(image.image_url, downloadedImage);
+    return downloadedImage;
+  } catch (error) {
+    if (existingLocalPath && (await fileExists(existingLocalPath))) {
+      const existingFileName = path.basename(existingLocalPath);
+      const fallbackImage = {
+        dimensions: await readDimensionsFromLocalFile(existingLocalPath),
+        localUrl: getPublicProjectUrl(project.category, project.slug, existingFileName)
+      };
+
+      console.warn(
+        `Reusing local image for ${project.slug}/${image.id}: ${error.message}`
+      );
+
+      dimensionCache.set(image.image_url, fallbackImage);
+      return fallbackImage;
+    }
+
+    throw new Error(
+      `Could not prepare local asset for ${project.slug}/${image.id}: ${error.message}`
+    );
   }
 };
 
@@ -226,25 +329,26 @@ const prepareLogos = async () => {
   return manifestLogos;
 };
 
-const normalizeProjectImage = async (projectName, image, index) => {
-  const dimensions = await readWebpDimensionsFromUrl(image.image_url);
+const normalizeProjectImage = async (project, image, index) => {
+  const localAsset = await downloadProjectImage(project, image, index);
+  const dimensions = localAsset.dimensions;
   const orientation =
     dimensions && dimensions.height > dimensions.width ? "portrait" : "landscape";
-  const alt = image.alt_text || `${projectName} architectural image ${index + 1}`;
+  const alt = image.alt_text || `${project.title} architectural image ${index + 1}`;
 
   return {
     id: image.id,
     alt,
     orientation,
     sources: {
-      w600: image.image_url,
-      w1200: image.image_url,
-      w1920: image.image_url
+      w600: localAsset.localUrl,
+      w1200: localAsset.localUrl,
+      w1920: localAsset.localUrl
     }
   };
 };
 
-const prepareProjectsFromSupabase = async (supabase) => {
+const prepareProjectsFromSupabase = async (supabase, existingProjects = []) => {
   const projects = await fetchSupabaseJson(supabase, "/rest/v1/projects", {
     select:
       "id,title,slug,category,description,cover_image_url,sort_order,updated_at,project_images(id,image_url,alt_text,sort_order)",
@@ -252,35 +356,60 @@ const prepareProjectsFromSupabase = async (supabase) => {
     order: "category.asc,sort_order.asc"
   });
 
+  const existingProjectsByKey = new Map(
+    existingProjects.map((project) => [getProjectKey(project.category, project.slug), project])
+  );
+
   return Promise.all(
     (projects ?? []).map(async (project) => {
-      const orderedImages = [...(project.project_images ?? [])].sort(
-        (left, right) => (left.sort_order ?? 0) - (right.sort_order ?? 0)
-      );
-      const images = await Promise.all(
-        orderedImages.map((image, index) => normalizeProjectImage(project.title, image, index))
-      );
-      const cover =
-        images.find((image) => image.sources.w1920 === project.cover_image_url) ?? images[0] ?? null;
+      const projectKey = getProjectKey(project.category, project.slug);
+      const existingProject = existingProjectsByKey.get(projectKey) ?? null;
 
-      if (!cover) {
-        return null;
+      try {
+        const orderedImages = [...(project.project_images ?? [])].sort(
+          (left, right) => (left.sort_order ?? 0) - (right.sort_order ?? 0)
+        );
+        const images = await Promise.all(
+          orderedImages.map((image, index) => normalizeProjectImage(project, image, index))
+        );
+        const coverIndex = orderedImages.findIndex(
+          (image) => image.image_url === project.cover_image_url
+        );
+        const cover = images[coverIndex] ?? images[0] ?? null;
+
+        if (!cover) {
+          if (existingProject) {
+            console.warn(`Reusing existing manifest entry for ${project.slug}; no cover image found.`);
+            return existingProject;
+          }
+
+          return null;
+        }
+
+        return {
+          category: project.category,
+          categoryLabel: CATEGORY_LABELS[project.category] ?? project.category,
+          name: project.title,
+          slug: project.slug,
+          description: project.description || `${project.title} architecture project.`,
+          cover,
+          images
+        };
+      } catch (error) {
+        if (existingProject) {
+          console.warn(
+            `Reusing existing manifest entry for ${project.slug}: ${error.message}`
+          );
+          return existingProject;
+        }
+
+        throw error;
       }
-
-      return {
-        category: project.category,
-        categoryLabel: CATEGORY_LABELS[project.category] ?? project.category,
-        name: project.title,
-        slug: project.slug,
-        description: project.description || `${project.title} architecture project.`,
-        cover,
-        images
-      };
     })
   ).then((result) => result.filter(Boolean));
 };
 
-const prepareSiteConfigFromSupabase = async (supabase) => {
+const prepareSiteConfigFromSupabase = async (supabase, existingSiteConfig) => {
   const rows = await fetchSupabaseJson(supabase, "/rest/v1/site_settings", {
     select: "site_title,tagline,bio,email,phone,instagram_url,whatsapp_url",
     id: "eq.1",
@@ -290,7 +419,7 @@ const prepareSiteConfigFromSupabase = async (supabase) => {
   const settings = rows?.[0];
   if (!settings) {
     return {
-      ...DEFAULT_SITE_CONFIG,
+      ...existingSiteConfig,
       siteUrl: getPublicSiteUrl()
     };
   }
@@ -310,30 +439,39 @@ const prepareSiteConfigFromSupabase = async (supabase) => {
 const main = async () => {
   await ensureDir(GENERATED_ROOT);
 
-  const [logos, existingManifest] = await Promise.all([
+  const [logos, existingManifest, existingSiteConfig] = await Promise.all([
     prepareLogos(),
-    parseJsonFile(MANIFEST_PATH, { generatedAt: null, logos: {}, projects: [] })
+    parseJsonFile(MANIFEST_PATH, { generatedAt: null, logos: {}, projects: [] }),
+    parseJsonFile(SITE_CONFIG_PATH, DEFAULT_SITE_CONFIG)
   ]);
 
   const supabase = getSupabaseConfig();
   let projects = existingManifest.projects ?? [];
   let siteConfig = {
     ...DEFAULT_SITE_CONFIG,
+    ...existingSiteConfig,
     siteUrl: getPublicSiteUrl()
   };
 
   if (supabase) {
-    console.log("Fetching portfolio data from Supabase...");
-    const [supabaseProjects, supabaseSiteConfig] = await Promise.all([
-      prepareProjectsFromSupabase(supabase),
-      prepareSiteConfigFromSupabase(supabase)
-    ]);
+    console.log("Fetching portfolio data from Supabase and caching images locally...");
 
-    if (supabaseProjects.length > 0) {
-      projects = supabaseProjects;
+    try {
+      const [supabaseProjects, supabaseSiteConfig] = await Promise.all([
+        prepareProjectsFromSupabase(supabase, projects),
+        prepareSiteConfigFromSupabase(supabase, siteConfig)
+      ]);
+
+      if (supabaseProjects.length > 0) {
+        projects = supabaseProjects;
+      } else {
+        console.warn("Supabase returned no published projects. Reusing existing manifest data.");
+      }
+
+      siteConfig = supabaseSiteConfig;
+    } catch (error) {
+      console.warn(`Supabase refresh failed. Reusing local generated data. ${error.message}`);
     }
-
-    siteConfig = supabaseSiteConfig;
   } else {
     console.log("Supabase env not found. Reusing existing generated portfolio data.");
   }
