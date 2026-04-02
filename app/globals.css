@@ -359,6 +359,24 @@ body:has(.hero-main) .brand-logo {
   gap: 2.4rem;
 }
 
+.about-studio-name {
+  margin: 0 0 0.35rem;
+  color: var(--accent);
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.about-tagline {
+  margin: 0 0 0.85rem;
+  max-width: 52ch;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.8;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
 .about-intro {
   margin: 0;
   max-width: 64ch;

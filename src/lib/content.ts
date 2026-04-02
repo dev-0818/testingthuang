@@ -1,10 +1,15 @@
 import generatedSiteConfig from "@/generated/site-config.json";
 
+const fallbackAboutIntro =
+  "Thuang Architect develops architecture with restrained forms, balanced light, and precise detailing. Every project is approached as a timeless environment, shaped by proportion rather than trend.";
+
 const defaultSiteConfig = {
   name: "Thuang Architect",
   shortName: "Thuang",
   description:
     "Thuang Architect is a minimalist architecture studio focused on high-end residential and commercial spaces with quiet luxury character.",
+  tagline: "Minimalist architecture with quiet luxury character.",
+  bio: fallbackAboutIntro,
   siteUrl: "https://www.thuangarchitect.com",
   instagramUrl: "https://instagram.com/thuangarchitect",
   contactEmail: "thuangarchitect@gmail.com",
@@ -24,8 +29,9 @@ export const NAV_LINKS = [
 ] as const;
 
 export const ABOUT_CONTENT = {
-  intro:
-    "Thuang Architect develops architecture with restrained forms, balanced light, and precise detailing. Every project is approached as a timeless environment, shaped by proportion rather than trend.",
+  studioName: SITE_CONFIG.name,
+  tagline: SITE_CONFIG.tagline || SITE_CONFIG.description,
+  intro: SITE_CONFIG.bio || fallbackAboutIntro,
   services: [
     "Architecture and Interior Design",
     "Spatial Planning and Concept Development",

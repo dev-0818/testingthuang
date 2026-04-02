@@ -27,6 +27,9 @@ const DEFAULT_SITE_CONFIG = {
   shortName: "Thuang",
   description:
     "Thuang Architect is a minimalist architecture studio focused on high-end residential and commercial spaces with quiet luxury character.",
+  tagline: "Minimalist architecture with quiet luxury character.",
+  bio:
+    "Thuang Architect develops architecture with restrained forms, balanced light, and precise detailing. Every project is approached as a timeless environment, shaped by proportion rather than trend.",
   siteUrl: "https://www.thuangarchitect.com",
   instagramUrl: "https://instagram.com/thuangarchitect",
   contactEmail: "thuangarchitect@gmail.com",
@@ -425,14 +428,16 @@ const prepareSiteConfigFromSupabase = async (supabase, existingSiteConfig) => {
   }
 
   return {
-    name: settings.site_title || DEFAULT_SITE_CONFIG.name,
-    shortName: DEFAULT_SITE_CONFIG.shortName,
-    description: settings.tagline || DEFAULT_SITE_CONFIG.description,
+    name: settings.site_title || existingSiteConfig.name || DEFAULT_SITE_CONFIG.name,
+    shortName: existingSiteConfig.shortName || DEFAULT_SITE_CONFIG.shortName,
+    description: settings.tagline || existingSiteConfig.description || DEFAULT_SITE_CONFIG.description,
+    tagline: settings.tagline || existingSiteConfig.tagline || DEFAULT_SITE_CONFIG.tagline,
+    bio: settings.bio || existingSiteConfig.bio || DEFAULT_SITE_CONFIG.bio,
     siteUrl: getPublicSiteUrl(),
-    instagramUrl: settings.instagram_url || DEFAULT_SITE_CONFIG.instagramUrl,
-    contactEmail: settings.email || DEFAULT_SITE_CONFIG.contactEmail,
-    whatsappNumber: settings.phone || DEFAULT_SITE_CONFIG.whatsappNumber,
-    whatsappUrl: settings.whatsapp_url || buildWhatsAppUrl(settings.phone)
+    instagramUrl: settings.instagram_url || existingSiteConfig.instagramUrl || DEFAULT_SITE_CONFIG.instagramUrl,
+    contactEmail: settings.email || existingSiteConfig.contactEmail || DEFAULT_SITE_CONFIG.contactEmail,
+    whatsappNumber: settings.phone || existingSiteConfig.whatsappNumber || DEFAULT_SITE_CONFIG.whatsappNumber,
+    whatsappUrl: settings.whatsapp_url || buildWhatsAppUrl(settings.phone) || existingSiteConfig.whatsappUrl || DEFAULT_SITE_CONFIG.whatsappUrl
   };
 };
 

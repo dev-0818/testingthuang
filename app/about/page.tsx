@@ -1,10 +1,11 @@
 import { SectionHeading } from "@/components/section-heading";
-import { ABOUT_CONTENT } from "@/lib/content";
+import { ABOUT_CONTENT, SITE_CONFIG } from "@/lib/content";
 import { buildMetadata } from "@/lib/seo";
 
 export const metadata = buildMetadata({
   title: "About",
   description:
+    SITE_CONFIG.tagline ||
     "Learn about Thuang Architect's approach, services, and design principles for high-end architectural projects.",
   path: "/about/"
 });
@@ -31,6 +32,8 @@ export default function AboutPage() {
         <div className="about-content">
           <article id="about-overview">
             <h2 className="section-eyebrow">About</h2>
+            <p className="about-studio-name">{ABOUT_CONTENT.studioName}</p>
+            <p className="about-tagline">{ABOUT_CONTENT.tagline}</p>
             <p className="about-intro">{ABOUT_CONTENT.intro}</p>
           </article>
 
